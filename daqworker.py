@@ -3,8 +3,32 @@ from collections import deque
 import logging
 import threading
 
+import daqmx
 import daqmx.lowlevel as d
 log = logging.getLogger('daq')
+import numpy
+import time
+
+class Timer(threading.Thread):
+    def __init__(self, interval, function, *args, **kwargs):
+        threading.Thread.__init__(self)
+
+        self.is_running = threading.Event()
+        self.task = function
+        self.args = args
+        self.kwargs = kwargs
+        self.interval = interval
+
+    def run(self):
+        self.is_running.set()
+
+        while self.is_running.is_set():
+        	time.sleep(self.interval)
+        	self.task(*self.args, **self.kwargs)
+
+    def cancel(self):
+        self.is_running.clear()
+
 
 class DAQWorker:
     '''a driver class for connecting to, and getting samples from, the DAQ card
@@ -29,8 +53,6 @@ class DAQWorker:
             self.sample_rate = sample_rate
             self.data = deque()
 
-            # request data every 25 ms
-            self.timer = threading.Timer(0.025, self.request_data)
         except RuntimeWarning as e:
             log.warning(e)
         except RuntimeError as e:
@@ -39,17 +61,27 @@ class DAQWorker:
             raise e
         
     def request_data(self):
-        log.debug('in callback, nsamples: %d, reading %d samples per channel', nsamples, nsamples>>1)
-        # try to get 4 channels-worth of samples, but return immediately
-        data, count = d.read_f64(self.h, self.samples_per_chan*4, n_samps_per_channel=self.samples_per_chan,
-               timeout=0.)
-        log.debug('got nsamples: %d, data %s', count, str(data))
-        data = numpy.frombuffer(data, dtype=numpy.float64, count=count<<2)
-        self.data.append(data.reshape(count, 4))
+        try:
+            log.debug('requesting data: buffer_size: %d, reading %d samples per channel', self.samples_per_chan<<2, 
+                    self.samples_per_chan)
+            # try to get 4 channels-worth of samples, but return immediately
+            data, count = d.read_f64(self.h, self.samples_per_chan<<2, n_samps_per_channel=self.samples_per_chan,
+                timeout=0.)
+            log.debug('got nsamples: %d, data %s', count, str(data))
+            data = numpy.frombuffer(data, dtype=numpy.float64, count=count<<2)
+            self.data.append(data.reshape(count, 4))
+        except RuntimeWarning as e:
+            log.warning(e)
+        except (RuntimeError, Exception) as e:
+            log.error(e)
+            self.stop()
 
     def start(self):
         self.data.clear()
         d.start_task(self.h)
+
+        # request data every 25 ms
+        self.timer = Timer(0.025, self.request_data)
         self.timer.start()
 
     def stop(self):
