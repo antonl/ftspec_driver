@@ -5,7 +5,7 @@ import threading
 
 import daqmx
 import daqmx.lowlevel as d
-log = logging.getLogger('daq')
+log = logging.getLogger(__name__)
 import numpy
 import time
 
@@ -35,9 +35,11 @@ class DAQWorker:
 
     This class is to be called on a timer to continuously add data to its data deque. 
     '''
-    def __init__(self, sample_rate, samples_per_chan):
+    def __init__(self, sample_rate, samples_per_chan, interval=0.025):
         try:
             self.h = d.make_task('ft_measure')
+            
+            log.info('DAQWorker task `ft_measure` created')
 
             log.debug('Initializing, handle {:d}'.format(self.h))
 
@@ -52,12 +54,19 @@ class DAQWorker:
             self.samples_per_chan = samples_per_chan
             self.sample_rate = sample_rate
             self.data = deque()
+            self.interval = interval
+            log.info('Sample rate: {0}\tSamples per Channel: {1}'.format(self.sample_rate, self.samples_per_chan))
 
         except RuntimeWarning as e:
             log.warning(e)
         except RuntimeError as e:
             log.error(e)
-            d.clear_task(self.h)
+
+            try:
+                d.clear_task(self.h)
+            except:
+                pass
+
             raise e
         
     def request_data(self):
@@ -81,7 +90,7 @@ class DAQWorker:
         d.start_task(self.h)
 
         # request data every 25 ms
-        self.timer = Timer(0.025, self.request_data)
+        self.timer = Timer(self.interval, self.request_data)
         self.timer.start()
 
     def stop(self):
