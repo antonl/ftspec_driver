@@ -5,6 +5,7 @@ from daqworker import Timer
 import logging
 
 log = logging.getLogger(__name__)
+
 # Functions taken from http://nicky.vanforeest.com/misc/fitEllipse/fitEllipse.html
 # and slightly corrected
 def fit_ellipse(x,y):
@@ -120,5 +121,3 @@ class EllipseCorrector(object):
         # finished processing
         log.debug('finished correcting batch')
         self.data.append(((nx,ny), (self.x0, self.y0, self.phi, self.a, self.b)))
-
-        self._cur_n -= 1

@@ -16,3 +16,9 @@ The idea is this:
 - make sure that continuous measurements are not missing samples. a relatively simple check is to store a bunch of frames and then take a derivative of each trace. if the derivatives are huge at periodic intervals, it is likely that I'm doing something wrong
 - make the motor driver code easier to use. Make it use the slave library I found
 
+## Implementation notes
+
+The ellipse-fitting works quite well. The problem is that for really slow movement of the motor, it doesn't make sense to try to fit an ellipse to that, unless you take a large number of blocks. 
+
+Instead, create a calibration task and a data taking task.
+

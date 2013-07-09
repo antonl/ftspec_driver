@@ -2,6 +2,7 @@ from __future__ import print_function
 from collections import deque
 import logging
 import threading
+from functools import partial
 
 import daqmx
 import daqmx.lowlevel as d
@@ -29,8 +30,83 @@ class Timer(threading.Thread):
     def cancel(self):
         self.is_running.clear()
 
+class DaqTask(object):
+    def __init__(self, name):
+        try:
+            self.h = d.make_task(name)
+            log.debug('DAQTask `{0}` created'.format(name))
+        except RuntimeError as e:
+            try:
+                d.clear_task(self.h)
+            except:
+                pass
 
-class DAQWorker:
+            log.error(e)
+        except RuntimeWarning as e:
+            log.warning(e)
+
+        self.voltage_channel = partial(d.add_input_voltage_channel, self.h)
+        self.sample_clock = partial(d.set_timing_sample_clock, self.h)
+        self.read64 = partial(d.read_f64, self.h)
+    
+    def read(self, *args, **kwargs):
+        return self.__read__(*args, **kwargs)
+
+    def start(self):
+        self.__start__()
+        d.start_task(self.h)
+
+    def clear(self):
+        self.__clear__()
+        d.clear_task(self.h)
+
+    def __start__(self): pass
+    def __read__(self): pass
+    def __clear__(self): pass
+    
+    def __del__(self):
+        try:
+            self.clear()
+        except:
+            pass
+
+class DaqContinuousTask(DaqTask):
+    def __init__(self, name, interval=0.1):
+        super(DaqContinuousTask, self).__init__(name)
+
+        self.timer_interval = interval
+        self.timer = Timer(self.timer_interval, self._process)
+        self.dataq = deque()
+
+        self.sample_clock = partial(d.set_timing_sample_clock, self.h, 
+                sample_mode=d.SampleMode.Continuous)
+
+    def _process(self):
+        data_item = self.read()
+        data_item = self.__process__(data_item)
+        self.dataq.append(data_item)
+
+    def __process__(self, data_item):
+        return data_item
+
+    def __start__(self):
+        self.timer.start()
+
+    def __clear__(self):
+        self.timer.clear()
+
+class CalibrationTask(DaqTask):
+    def __init__(self, name, sample_rate, samples_per_channel):
+        super(CalibrationTask, self).__init__(name)
+        self.voltage_channel('Dev1/ai0', 0, 0.5, units=daqmx.Units.Volts, name='I')
+        self.voltage_channel('Dev1/ai1', 0, 0.5, units=daqmx.Units.Volts, name='Q')
+        self.sample_clock(sample_rate, samples_per_chan)
+
+    def __read__(self):
+        data, count = self.read64(samples_per_chan<<1)
+        return numpy.frombuffer(data, dtype=numpy.float64, count=count<<1)
+
+class DaqWorker:
     '''a driver class for connecting to, and getting samples from, the DAQ card
 
     This class is to be called on a timer to continuously add data to its data deque. 
