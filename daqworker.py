@@ -100,10 +100,12 @@ class CalibrationTask(DaqTask):
         super(CalibrationTask, self).__init__(name)
         self.voltage_channel('Dev1/ai0', 0, 0.5, units=daqmx.Units.Volts, name='I')
         self.voltage_channel('Dev1/ai1', 0, 0.5, units=daqmx.Units.Volts, name='Q')
-        self.sample_clock(sample_rate, samples_per_channel)
+        self.sample_clock(sample_rate, samples_per_channel<<1)
+
+        self.samples_per_channel = samples_per_channel
 
     def __read__(self):
-        data, count = self.read64(samples_per_chan<<1)
+        data, count = self.read64(samples_per_channel<<2)
         return numpy.frombuffer(data, dtype=numpy.float64, count=count<<1)
 
 class DaqWorker:
