@@ -53,52 +53,56 @@ class EllipseCorrector(object):
     periodically fits an ellipse to it. Then, it processes the data blocks
     to give time delays on the output
 
-    :param n: how often to refit data in blocks. Defaults to 10
     :param w: $\omega$, angular frequency of the laser
     :param timer: how often the timer thread runs to pop data off of the queue
     '''
-    def __init__(self, data, w, n=100, timer=0.01):
+    def __init__(self, data, timer=0.1):
         #  the data queue that I read from 
         # processed data
         self.data = deque()
         self.timer = Timer(timer, self._process_data, data)
-        self._max_n = n
-        self._cur_n = 0
+        self._w = w # omega, to get time delay
+        self._phase_register = 100
+        self.phase_init = threading.Event()
         log.debug('created corrector')
 
     def start(self): self.timer.start()
     def stop(self): self.timer.cancel()
+    def reset_phase(self): self.phase_init.clear()
+
+    def set_calibration(self, args):
+        self.x0, self.y0, self.phi, self.a, self.b = args
+
+    @staticmethod
+    def fit_ellipse(data):
+        # do an ellipse fit
+        log.info('fitting ellipse')
+        a = fit_ellipse(data[:, 0], data[:, 1])
+        x0, y0 = ellipse_center(a) 
+        phi = ellipse_angle_of_rotation(a)
+
+        # a will always be major axis, b is minor axis
+        a, b = ellipse_axis_length(a)
+        a, b = np.max([a, b]), np.min([a,b])
+        log.info('''ellipse parameters are 
+        x0,y0 = ({0},{1})
+        phi={2}
+        a = {3}
+        b = {4}'''.format(x0, y0, phi, a, b))
+        return x0, y0, phi, a, b
 
     def _process_data(self, raw_data_queue):
         try:
             log.debug('trying to pop data')
-            data = raw_data_queue.pop()
+            data = raw_data_queue.popleft()
             log.debug('success, {0} items left'.format(len(raw_data_queue)))
+            if len(data[:, 0]) == 0:
+            	return
         except IndexError: # queue is empty
             log.debug('queue empty')
             return 
         
-        if self._cur_n == 0:
-            # do an ellipse fit
-            log.info('fitting ellipse')
-            self._cur_n = 0
-            a = fit_ellipse(data[:, 0], data[:, 1])
-            self.x0, self.y0 = ellipse_center(a) 
-            self.phi = ellipse_angle_of_rotation(a)
-
-            # a will always be major axis, b is minor axis
-            a,b = ellipse_axis_length(a)
-            self.a, self.b = np.max([a, b]), np.min([a,b])
-            log.info('''ellipse parameters are 
-            x0,y0 = ({0},{1})
-            phi={2}
-            a = {3}
-            b = {4}'''.format(self.x0, self.y0, self.phi, self.a, self.b))
-
-            self._cur_n = self._max_n
-
-        log.info('correcting data')
-
+        log.debug('correcting data')
         x,y = data[:, 0], data[:, 1]
 
         # remove offsets
@@ -118,6 +122,17 @@ class EllipseCorrector(object):
             nx = nx/self.b
             ny = ny/self.a
 
+        if not self.phase_init.isSet():
+            self.phase = np.zeros((self._phase_register,))
+            pos = np.unwrap(np.arctan2(ny, nx))
+            np.copyto(self.phase, pos[-self._phase_register:])
+            log.debug('initialized phase register')
+            self.phase_init.set()
+        else:
+            pos = np.unwrap(np.hstack([self.phase, np.arctan2(ny, nx)]))[self._phase_register:]
+            np.copyto(self.phase, pos[-self._phase_register:])
+            log.debug('using phase register')
+
         # finished processing
         log.debug('finished correcting batch')
-        self.data.append(((nx,ny), (self.x0, self.y0, self.phi, self.a, self.b)))
+        self.data.append((pos/self._w, data[:, 2], data[:, 3]))

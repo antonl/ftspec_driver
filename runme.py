@@ -12,46 +12,60 @@ from ellipse import EllipseCorrector
 
 import time
 
-try:
-    worker = DAQWorker(2<<15, 2<<16, interval=0.5) 
-    processor = EllipseCorrector(worker.data,w=0, n=1)
-    motor = SMC100CC(AsciiSerial(9, baudrate=57600, xonxoff=True))
-except Exception as e:
-    log.exception(e)
-    del worker
-    del motor
-    sys.exit(-1)
+def sleep_motor():
+    while True:
+        try:
+            if abs(motor.position - motor.set_point) < 0.001: # close enough
+                break
+            else:
+                time.sleep(0.2)
+        except AssertionError:
+            continue
+
+worker = DAQWorker(2<<13, 2<<12, interval=0.5) 
+processor = EllipseCorrector(worker.data, w=4.736e14, n=650000)
+motor = SMC100CC(AsciiSerial(9, baudrate=57600, xonxoff=True))
 
 motor.stop()
 
-# move motor close to time zero
-time_zero = 19.85
+# calibrate ellipse by shifting it around a bit
 motor.velocity = 1
-motor.position = time_zero 
+motor.position = 12.5
+sleep_motor() # wait until done moving
 
-while True:
-    try:
-        pos = abs(motor.position - time_zero)
-        if pos < 0.001: # close enough
-    	    break
-        else:
-            time.sleep(0.2)
-    except AssertionError:
-        continue
+motor.velocity = 0.1
+motor.offset = 2
+time.sleep(2)
+worker.start()
+processor.start()
+time.sleep(2)
+worker.clear()
+processor.stop()
+motor.stop()
+processor.data.clear()
+processor.reset_phase()
+# hypothetically, we have a fit now
+
+# move motor close to time zero
+time_zero = 19.95
+motor.velocity = 1
+motor.position = time_zero + 0.001 
+sleep_motor()
 
 log.info('moved to proper position')
 
-motor.velocity = 0.005
+motor.velocity = 0.001
 
 # start capturing data and start moving motor
-motor.offset = 1.6
-time.sleep(5) # Sleep for a bit so motor has time to start moving
+motor.offset = -0.004
+
+time.sleep(2) # Sleep for a bit so motor has time to start moving
 worker.start()
 processor.start()
 log.info('capturing data')
 
 # wait for a bit
-time.sleep(15)
+sleep_motor()
 
 worker.stop()
 motor.stop()
