@@ -59,7 +59,7 @@ log.warning(motor.error_string)
 # move motor close to time zero
 time_zero = 19.95
 motor.velocity = 1
-motor.position = time_zero + 0.001 
+motor.position = time_zero + 0.015 
 
 sleep_motor()
 log.warning(motor.error_string)
@@ -68,7 +68,7 @@ log.info('moved to proper position')
 motor.velocity = 0.001
 
 # start capturing data and start moving motor
-motor.offset = -0.04
+motor.position = time_zero - 0.04
 time.sleep(2) # Sleep for a bit so motor has time to start moving
 worker.start()
 processor.start()

@@ -137,4 +137,4 @@ class EllipseCorrector(object):
 
         # finished processing
         log.debug('finished correcting batch')
-        self.data.append(np.hstack((pos/self._w, data[:, 2], data[:, 3])))
+        self.data.append(np.vstack((pos/self._w, data[:, 2], data[:, 3])))
