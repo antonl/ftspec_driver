@@ -3,6 +3,7 @@ import threading
 from collections import deque
 from daqworker import Timer
 import logging
+import io
 
 log = logging.getLogger(__name__)
 
@@ -61,13 +62,14 @@ class EllipseCorrector(object):
         # processed data
         self.data = deque()
         self.timer = Timer(timer, self._process_data, data)
-        self._w = w # omega, to get time delay
+        self._w = 4.736e14 # omega, to get time delay
         self._phase_register = 100
         self.phase_init = threading.Event()
+
         log.debug('created corrector')
 
     def start(self): self.timer.start()
-    def stop(self): self.timer.cancel()
+    def stop(self): self.timer.stop()
     def reset_phase(self): self.phase_init.clear()
 
     def set_calibration(self, args):
@@ -84,7 +86,7 @@ class EllipseCorrector(object):
         # a will always be major axis, b is minor axis
         a, b = ellipse_axis_length(a)
         a, b = np.max([a, b]), np.min([a,b])
-        log.info('''ellipse parameters are 
+        log.debug('''ellipse parameters are 
         x0,y0 = ({0},{1})
         phi={2}
         a = {3}
@@ -135,4 +137,4 @@ class EllipseCorrector(object):
 
         # finished processing
         log.debug('finished correcting batch')
-        self.data.append((pos/self._w, data[:, 2], data[:, 3]))
+        self.data.append(np.hstack((pos/self._w, data[:, 2], data[:, 3])))
